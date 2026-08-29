@@ -1,0 +1,15 @@
+# Gemma 4 multimodal support landed in transformers 5.x; the upper bound guards
+# against breaking changes in the next major release.
+transformers>=5.0.0,<6.0.0
+accelerate>=0.30.0,<2.0.0
+bitsandbytes>=0.43.0,<1.0.0
+torch>=2.1.0
+torchvision>=0.16.0
+pillow>=10.0.0
+playwright>=1.40.0,<2.0.0
+nest_asyncio>=1.5.0
+# No upper bound: Colab preinstalls a recent gradio, and capping it forces a
+# downgrade that drags gradio-client/starlette/pydantic down with it, conflicting
+# with Colab's preinstalled google-genai/google-adk stack.
+gradio>=4.0.0
+python-dotenv>=1.0.0

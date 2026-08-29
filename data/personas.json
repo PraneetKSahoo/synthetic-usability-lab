@@ -1,0 +1,20 @@
+[
+  {
+    "id": "david_58",
+    "name": "David",
+    "age": 58,
+    "tech_literacy": "Low",
+    "habits": "Suspicious of sharing sensitive info, dislikes jargon like 2FA/TOTP.",
+    "patience": 7,
+    "avatar": "👴"
+  },
+  {
+    "id": "maya_26",
+    "name": "Maya",
+    "age": 26,
+    "tech_literacy": "High",
+    "habits": "Skims text, expects 1-click solutions, impatient.",
+    "patience": 9,
+    "avatar": "👩‍💻"
+  }
+]

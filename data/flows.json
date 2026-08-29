@@ -1,0 +1,26 @@
+[
+  {
+    "screen_id": 1,
+    "title": "Welcome to NestEgg",
+    "headline": "Track your retirement in one place",
+    "body": "Get started in 30 seconds. No credit card required.",
+    "primary_cta": "Create Free Account",
+    "secondary_cta": "Learn More"
+  },
+  {
+    "screen_id": 2,
+    "title": "Secure Two-Factor Authentication",
+    "headline": "Setup your TOTP Authenticator",
+    "body": "Scan this QR code with Google Authenticator or enter your 32-digit secret key manually.",
+    "primary_cta": "Confirm TOTP Code",
+    "secondary_cta": "Having Trouble?"
+  },
+  {
+    "screen_id": 3,
+    "title": "Link Financial Institutions",
+    "headline": "Connect your primary checking account",
+    "body": "We use encrypted APIs to read balances. We never store your credentials.",
+    "primary_cta": "Connect Bank (Instant)",
+    "secondary_cta": "Skip for now"
+  }
+]
