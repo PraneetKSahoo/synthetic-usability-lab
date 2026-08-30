@@ -49,6 +49,9 @@ Each persona actually browses the page in a headless Chromium session, looks at 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/4e9f608b-8fa0-4153-9d27-085d202bf7aa" width="850" controls></video>
 </p>
+<p align="center">
+  <img src="assets/screenshots/demo.png" width="850" alt="Synthetic Usability Lab — Live Testing Sandbox - Cognitive friction per step" />
+</p>
 
 ## Why
 
