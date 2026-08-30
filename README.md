@@ -47,7 +47,10 @@ Each persona actually browses the page in a headless Chromium session, looks at 
 4. **Replays it.** The Gradio UI renders an animated step-by-step replay per persona, a comparative benchmark table, and a confusion-over-time chart — with the same detail streamed live to your terminal as the run happens.
 
 <p align="center">
-  <img src="assets/screenshots/demo.gif" width="850" alt="Watching a persona navigate a live site step by step" />
+  <video src="assets/screenshots/demo.mp4" width="850" autoplay loop muted playsinline
+         title="Watching a persona navigate a live site step by step">
+    <a href="assets/screenshots/demo.mp4">Watch the demo video</a>
+  </video>
 </p>
 
 <p align="center">
