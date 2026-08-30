@@ -47,14 +47,7 @@ Each persona actually browses the page in a headless Chromium session, looks at 
 4. **Replays it.** The Gradio UI renders an animated step-by-step replay per persona, a comparative benchmark table, and a confusion-over-time chart — with the same detail streamed live to your terminal as the run happens.
 
 <p align="center">
-  <video src="assets/screenshots/demo.mp4" width="850" autoplay loop muted playsinline
-         title="Watching a persona navigate a live site step by step">
-    <a href="assets/screenshots/demo.mp4">Watch the demo video</a>
-  </video>
-</p>
-
-<p align="center">
-  <img src="assets/screenshots/replay-step.png" width="850" alt="Step replay showing internal monologue, action taken, and UX finding" />
+  <video src="https://github.com/user-attachments/assets/4e9f608b-8fa0-4153-9d27-085d202bf7aa" width="850" controls></video>
 </p>
 
 ## Why
@@ -136,15 +129,14 @@ You can also describe a persona in plain English and have the model turn it into
   <img src="assets/screenshots/persona-editor.png" width="850" alt="Persona Customizer — edit traits or generate a new persona from a plain-English description" />
 </p>
 
-<p align="center">
-  <img src="assets/screenshots/comparative-matrix.png" width="850" alt="Comparative benchmark matrix across personas" />
-</p>
 
 ## Try it: three worked examples
 
 **Before writing your own task:** end it on an action that produces a real, observable change — a navigation, a confirmation, a URL change. `books.toscrape.com`'s "Add to basket" is decorative and changes nothing, so a task ending there will trip stall detection no matter how well the persona performs. Prefer *"open its product page"* on that particular sandbox.
 
-### 1. Search and navigate — the quickest end-to-end check
+**On runtime:** inference dominates, at roughly 45–105s per step on a Colab T4. Times below are for a single persona; running two personas doubles them.
+
+### 1. Search and navigate — start here (~3 min)
 
 ```
 Persona:  Maya, 26 — High tech literacy, patience 9/10, skims text.
@@ -153,22 +145,22 @@ Task:     "Search for 'Fitts's law' and open its article."
 Steps:    4
 ```
 
-The fastest way to confirm a working install. Exercises the `TYPE` → fill → Enter path and the input-vs-button distinction, uses no survey logic at all, and finishes in 2–3 steps with an unambiguous success state. Wikipedia doesn't fingerprint headless browsers and has clean semantic markup, so failures here are real failures rather than bot-blocking.
+The cheapest way to confirm a working install before committing to a longer run. Exercises the `TYPE` → fill → Enter path and the input-vs-button distinction, uses no survey logic at all, and finishes in 2–3 steps with an unambiguous success state. Wikipedia doesn't fingerprint headless browsers and has clean semantic markup, so a failure here is a real failure rather than bot-blocking.
 
-### 2. Visual reasoning under a hard constraint
+### 2. Visual reasoning — reading what the DOM doesn't say (~8 min)
 
 ```
 Persona:  Carol, 68 — Low tech literacy, patience 4/10, reads every word,
           doesn't scroll unless content is obviously cut off.
 Website:  https://books.toscrape.com
-Task:     "Find a Science Fiction book under £20 with a 4-star or higher
-          rating, then open its product page."
-Steps:    5
+Task:     "Find a Science Fiction book with a 5-star rating and open its
+          product page."
+Steps:    8
 ```
 
-Star ratings on this site are CSS classes with no text, so the model must read the star icons *off the screenshot* and cross-reference against price with no sort or filter available — reliably producing a confusion spike mid-run.
+Star ratings on this site are pure CSS classes with no text content, so the rating is invisible to the element list — the model has to read the star icons *off the screenshot* itself. A good demonstration of what the multimodal input actually buys you, and of how a low-patience persona reacts to scanning a list with no filter control.
 
-### 3. Missing affordance + multi-viewport survey
+### 3. Missing affordance + multi-viewport survey (~12 min)
 
 ```
 Persona:  Dev, 34 — High tech literacy, patience 3/10, comparison shopper
@@ -179,7 +171,8 @@ Task:     "Find the cheapest book in the Mystery category and open its
 Steps:    8
 ```
 
-No sort-by-price control and more items than fit one viewport, so finding the true cheapest requires surveying across several scrolls. This is the scenario the `SurveyTracker` exists for — watch the `Best` row in the terminal hold steady at the correct item as the surveyed count climbs.
+No sort-by-price control and more items than fit one viewport, so finding the true cheapest requires surveying across several scrolls while remembering the best candidate seen so far. This is the scenario [`SurveyTracker`](src/survey.py) exists for — watch the `Best` row in the terminal hold steady at the correct item as the surveyed count climbs.
+
 
 ## Setup
 
