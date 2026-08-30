@@ -3,11 +3,79 @@ import io
 import base64
 import time
 import logging
+import textwrap
 from typing import Dict, Any, List
 from PIL import Image, ImageDraw, ImageFont
-from playwright.sync_api import sync_playwright
+
+from src.survey import SurveyTracker
+
+# NOTE: playwright is imported lazily inside run_multi_persona_task so that this
+# module (and its pure formatting/parsing helpers) stays importable — and
+# testable — on machines without the browser stack installed.
 
 logger = logging.getLogger(__name__)
+
+LOG_WIDTH = 96
+
+
+def format_step_log(decision: Dict[str, Any], max_steps: int) -> str:
+    """Renders one step as a readable terminal block.
+
+    Mirrors what the replay UI shows (monologue, action taken, notes carried
+    forward, UX finding) so a run can be followed live from the console without
+    waiting for the Gradio replay to render at the end.
+    """
+    debug = decision.get("debug_info", {}) or {}
+    latency = decision.get("latency_telemetry", {}) or {}
+
+    def row(label: str, text: Any) -> str:
+        if text in (None, ""):
+            return ""
+        body = textwrap.fill(
+            str(text).strip(),
+            width=LOG_WIDTH,
+            initial_indent="",
+            subsequent_indent=" " * 12,
+        )
+        return f"  {label:<10}{body}\n"
+
+    avatar = decision.get("avatar", "👤")
+    name = decision.get("persona_name", "Persona")
+    step = decision.get("step", "?")
+
+    # ASCII box characters only: Windows consoles default to cp1252, where
+    # box-drawing glyphs raise UnicodeEncodeError and would kill the run.
+    header = f"{avatar} {name} | Step {step}/{max_steps}"
+    out = f"\n+-- {header} " + "-" * max(0, LOG_WIDTH - len(header) - 5) + "\n"
+
+    page = decision.get("page_title", "")
+    url = decision.get("url", "")
+    out += row("Page", f"{page} - {url}" if page or url else "")
+    out += row("Monologue", f'"{decision.get("internal_monologue", "")}"')
+
+    state = "  |  ".join(filter(None, [
+        str(decision.get("action", "?")),
+        f'confusion {decision.get("confusion_pct", "?")}%',
+        str(decision.get("sentiment", "")),
+        str(decision.get("goal_status", "")),
+    ]))
+    out += row("Action", state)
+    out += row("Executed", debug.get("execution_log", ""))
+    out += row("Best", debug.get("survey", ""))
+    out += row("Notes", debug.get("observations", ""))
+    out += row("Finding", decision.get("critique", ""))
+
+    if latency:
+        out += row(
+            "Timing",
+            f'{latency.get("total_sec", "?")}s total '
+            f'(AI {latency.get("vlm_cognition_sec", "?")}s, '
+            f'web {latency.get("web_settle_sec", "?")}s, '
+            f'action {latency.get("action_exec_sec", "?")}s)',
+        )
+
+    out += "+" + "-" * (LOG_WIDTH - 1)
+    return out
 
 def draw_set_of_marks(image: Image.Image, elements: List[Dict[str, Any]]) -> Image.Image:
     if not elements:
@@ -103,6 +171,23 @@ class WebBrowserRunner:
                 return true;
             }
 
+            // A listing page renders ~20 buttons all labelled "Add to basket".
+            // Without naming the item each one belongs to, choosing the right
+            // badge is pure visual grounding — and the model has no way to state
+            // (or verify) which row it meant. Resolving the owning card's title
+            // makes the choice decidable from the text list alone.
+            function owningItemName(el) {
+                const card = el.closest(
+                    'article, li, .product_pod, [class*="card"], [class*="item"], [class*="product"], [class*="result"]'
+                );
+                if (!card) return '';
+                const heading = card.querySelector('h1, h2, h3, h4, h5, a[title]');
+                if (!heading) return '';
+                const name = (heading.getAttribute('title') || heading.innerText || '')
+                    .trim().replace(/\\s+/g, ' ');
+                return name.length > 45 ? name.substring(0, 45) + '...' : name;
+            }
+
             function isFormControl(el) {
                 const tag = el.tagName.toLowerCase();
                 if (tag === 'input' || tag === 'textarea' || tag === 'select') return true;
@@ -171,11 +256,25 @@ class WebBrowserRunner:
 
                 if (label.length === 0) continue;
 
+                // Qualify repeated action labels with the item they act on, so
+                // "Add to basket" becomes 'Add to basket [for: Tastes Like Fear]'.
+                const isAction = el.tagName.toLowerCase() === 'button' ||
+                                 (el.getAttribute('type') || '').toLowerCase() === 'submit';
+                if (isAction) {
+                    const owner = owningItemName(el);
+                    if (owner && label.toLowerCase().indexOf(owner.toLowerCase()) === -1) {
+                        label = `${label} [for: ${owner}]`;
+                    }
+                }
+
                 const itemData = {
                     el: el,
                     tag: el.tagName.toLowerCase(),
                     type: (el.getAttribute('type') || '').toLowerCase() || el.tagName.toLowerCase(),
-                    text: label.substring(0, 60),
+                    // 110, not 60: the "[for: <item>]" qualifier on action buttons
+                    // must survive truncation or identical labels become
+                    // indistinguishable again.
+                    text: label.substring(0, 110),
                     isForm: isFormControl(el),
                     rect: {
                         top: rect.top,
@@ -264,6 +363,21 @@ class WebBrowserRunner:
         element_sig = "|".join(f"{el['id']}:{el.get('text', '')}" for el in visual_elements)
         return f"{url}::{title}::{scroll_y}::{element_sig}"
 
+    def _at_page_bottom(self, page) -> bool:
+        """True when the viewport is already at the bottom of the document.
+
+        This is the only reliable "you have seen everything here" signal. Counting
+        items against the page's stated result total does not work: a category
+        listing "32 results" may only render 20 on page one, so `seen >= total` is
+        unreachable and a survey keyed on it scrolls into a wall forever.
+        """
+        try:
+            return bool(page.evaluate(
+                "() => (window.innerHeight + window.scrollY) >= (document.body.scrollHeight - 8)"
+            ))
+        except Exception:
+            return False
+
     def _settle(self, page, extra_wait: int = 2000) -> None:
         """Waits for navigation/DOM to settle after an interaction."""
         try:
@@ -275,11 +389,11 @@ class WebBrowserRunner:
     def run_single_persona_session(self, page, target_url: str, is_figma: bool, task: str, persona: Dict[str, Any], engine, max_steps: int = 5) -> List[Dict[str, Any]]:
         steps_record = []
         history_log = []
-        # Rolling scratchpad the model maintains for itself. Without this, each
-        # scroll wipes out what it saw: it would survey a long list, then pick the
-        # best item in the CURRENT viewport while forgetting a cheaper one it had
-        # already found two steps earlier.
+        # Free-text scratchpad for non-numeric context only (banners dismissed, etc).
         observations = ""
+        # All superlative bookkeeping ("cheapest so far", "how many seen") lives in
+        # code — see src/survey.py for why the model cannot be trusted with it.
+        survey = SurveyTracker()
 
         # Stuck-loop tracking: if the same element/action keeps producing zero
         # visible change on the page (e.g. a non-responsive accordion widget),
@@ -331,14 +445,29 @@ class WebBrowserRunner:
                 visual_elements=visual_elements,
                 history=history_log,
                 step_num=step_idx,
-                observations=observations
+                observations=observations,
+                survey_state=survey.render(),
+                survey_exhausted=survey.is_exhausted,
+                at_page_bottom=self._at_page_bottom(page)
             )
             t_vlm_end = time.perf_counter()
 
-            # Carry the model's own notes into the next step.
+            # Fold this step's sightings into the system-maintained survey state.
+            survey.set_objective(decision.get("objective"))
+            survey.set_total(decision.get("survey_total"))
+            new_items = survey.add_candidates(decision.get("candidates"))
+            if survey.objective != "NONE":
+                logger.info(
+                    "Survey: +%s new (%s seen%s)%s",
+                    new_items, survey.seen_count,
+                    f" of {survey.total}" if survey.total else "",
+                    f", best: {survey.best[0]} @ {survey.best[1]:g}" if survey.best else ""
+                )
+
+            # Carry the model's own free-text notes into the next step.
             new_observations = decision.get("observations")
             if isinstance(new_observations, str) and new_observations.strip():
-                observations = new_observations.strip()[:800]
+                observations = new_observations.strip()[:400]
 
             target_tag = decision.get("target_tag")
             matched_el = next((el for el in visual_elements if el["id"] == target_tag), None) if visual_elements else None
@@ -394,16 +523,26 @@ class WebBrowserRunner:
                     # first meant a SCROLL that also carried a target_tag silently
                     # executed as a click instead.
                     if action_type == "SCROLL":
-                        # Scroll by ~85% of the viewport: a fixed 500px on an 800px
-                        # viewport overlapped heavily, so surveying a long list ate
-                        # far more steps than the max_steps budget allows.
-                        try:
-                            scroll_by = int(page.evaluate("() => Math.round(window.innerHeight * 0.85)"))
-                        except Exception:
-                            scroll_by = 650
-                        page.mouse.wheel(0, scroll_by)
-                        exec_log += f" | Scrolled down {scroll_by}px"
-                        page.wait_for_timeout(1500)
+                        if self._at_page_bottom(page):
+                            # Already at the document bottom — scrolling cannot do
+                            # anything. Say so loudly rather than burning a ~90s
+                            # step on a guaranteed no-op.
+                            exec_log += " | ⚠ SCROLL refused: already at the bottom of the page"
+                            logger.warning(
+                                "Step %s: SCROLL requested at page bottom — nothing left to reveal.",
+                                step_idx
+                            )
+                        else:
+                            # Scroll by ~85% of the viewport: a fixed 500px on an 800px
+                            # viewport overlapped heavily, so surveying a long list ate
+                            # far more steps than the max_steps budget allows.
+                            try:
+                                scroll_by = int(page.evaluate("() => Math.round(window.innerHeight * 0.85)"))
+                            except Exception:
+                                scroll_by = 650
+                            page.mouse.wheel(0, scroll_by)
+                            exec_log += f" | Scrolled down {scroll_by}px"
+                            page.wait_for_timeout(1500)
 
                     elif is_figma or not visual_elements:
                         page.mouse.click(px_x, px_y)
@@ -535,8 +674,14 @@ class WebBrowserRunner:
                 "target_tag": target_tag,
                 "annotated_screenshot_b64": annotated_b64,
                 "url_after_action": page.url,
-                "observations": observations
+                "observations": observations,
+                "survey": (
+                    f"{survey.best[0]} @ {survey.best[1]:g} "
+                    f"({survey.seen_count}{f'/{survey.total}' if survey.total else ''} surveyed)"
+                    if survey.best else ""
+                )
             }
+            logger.info(format_step_log(decision, max_steps))
             steps_record.append(decision)
 
             # UNIVERSAL DUAL-CRITERIA TERMINATION
@@ -545,7 +690,11 @@ class WebBrowserRunner:
                 action_type in ["COMPLETE", "DROP_OFF"]
             )
             if is_terminal:
-                print(f"🛑 [Runner] Goal Finished at Step {step_idx} ({persona['name']}): Status={decision.get('goal_status')}, Action={action_type}")
+                logger.info(
+                    "🛑 Session finished for %s at step %s — status=%s, action=%s",
+                    persona.get("name", "Persona"), step_idx,
+                    decision.get("goal_status"), action_type
+                )
                 break
 
             history_log.append({
@@ -560,6 +709,8 @@ class WebBrowserRunner:
 
     def run_multi_persona_task(self, url: str, task: str, selected_personas: List[Dict[str, Any]], engine, max_steps: int = 5) -> Dict[str, List[Dict[str, Any]]]:
         """Runs isolated browser sessions sequentially for each selected persona."""
+        from playwright.sync_api import sync_playwright
+
         multi_results = {}
         target_url = self._sanitize_url(url)
         is_figma = "figma.com/proto" in target_url
@@ -571,7 +722,10 @@ class WebBrowserRunner:
             )
 
             for persona in selected_personas:
-                print(f"\n👤 [Playwright] Starting Isolated Session for: {persona['name']}...")
+                logger.info(
+                    "\n%s\nStarting isolated session: %s  |  task: %s\n%s",
+                    "=" * LOG_WIDTH, persona.get("name", "Persona"), task, "=" * LOG_WIDTH
+                )
                 # Fresh isolated context per persona
                 context = browser.new_context(
                     viewport={"width": 1280, "height": 800},

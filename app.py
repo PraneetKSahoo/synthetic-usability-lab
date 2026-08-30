@@ -1,8 +1,18 @@
 import os
+import sys
 import json
 import logging
 from dotenv import load_dotenv
 load_dotenv()
+
+# Persona avatars are emoji and model output is arbitrary text, so the log stream
+# must tolerate characters the console encoding can't represent (Windows consoles
+# default to cp1252, where an unencodable glyph raises and kills the run).
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+    except (AttributeError, ValueError):
+        pass
 
 logging.basicConfig(
     level=logging.INFO,

@@ -47,9 +47,32 @@ class TestObservationsInPrompt:
         prompt, _ = run_step('{"action": "SCROLL"}')
         assert "RE-ASSIGNED EVERY STEP" in prompt
 
-    def test_carry_forward_rule_present(self):
-        prompt, _ = run_step('{"action": "SCROLL"}')
-        assert "CARRY YOUR RUNNING BEST FORWARD" in prompt
+    def test_system_maintained_survey_state_is_injected(self):
+        """Superlative bookkeeping is code-owned now — see tests/test_survey_tracker.py."""
+        llm = Mock()
+        llm.generate_with_vision.return_value = '{"action": "SCROLL"}'
+        eng = UsabilityEngine(llm_client=llm)
+        eng.simulate_visual_web_step(
+            persona=PERSONA, screenshot=None, page_title="T", url="http://x",
+            task="find the cheapest book", visual_elements=ELEMENTS, history=[],
+            step_num=2, survey_state='BEST FOUND SO FAR: "Tastes Like Fear" at 10.69',
+        )
+        prompt = llm.generate_with_vision.call_args[0][0]
+        assert 'BEST FOUND SO FAR: "Tastes Like Fear" at 10.69' in prompt
+
+    def test_exhausted_scroll_notice_breaks_the_loop(self):
+        """Without this the model scrolls forever waiting to 'finish surveying'."""
+        llm = Mock()
+        llm.generate_with_vision.return_value = '{"action": "CLICK"}'
+        eng = UsabilityEngine(llm_client=llm)
+        eng.simulate_visual_web_step(
+            persona=PERSONA, screenshot=None, page_title="T", url="http://x",
+            task="find the cheapest book", visual_elements=ELEMENTS, history=[],
+            step_num=5, survey_exhausted=True,
+        )
+        prompt = llm.generate_with_vision.call_args[0][0]
+        assert "SCROLLING IS EXHAUSTED" in prompt
+        assert "Do NOT choose SCROLL again" in prompt
 
     def test_pagination_rule_present(self):
         prompt, _ = run_step('{"action": "SCROLL"}')
