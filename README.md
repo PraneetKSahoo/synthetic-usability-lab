@@ -49,13 +49,14 @@ Each persona actually browses the page in a headless Chromium session, looks at 
 <p align="center">
   <video src="https://github.com/user-attachments/assets/4e9f608b-8fa0-4153-9d27-085d202bf7aa" width="850" controls></video>
 </p>
-<p align="center">
-  <img src="assets/screenshots/demo.png" width="850" alt="Synthetic Usability Lab — Live Testing Sandbox - Cognitive friction per step" />
-</p>
 
 ## Why
 
 Real usability testing is slow to arrange and expensive to run at the volume you'd actually want — every draft of every flow, against every persona you care about, before a single participant is recruited. This isn't a replacement for that: a small multimodal model narrating a list of badges is not a human, and its "confusion" is a proxy, not a fact. What it *is* good for is a fast, repeatable first pass — catching the missing sort control, the buried CTA, the accordion that swallows the answer, before you spend a real participant's time on it.
+
+<p align="center">
+  <img src="assets/screenshots/demo.png" width="850" alt="Synthetic Usability Lab — Live Testing Sandbox - Cognitive friction per step" />
+</p>
 
 ## How it works
 
